@@ -1,7 +1,9 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Selu383.SP26.Api.Data;
 using Selu383.SP26.Api.Features.Locations;
+using System.Security.Claims;
 
 namespace Selu383.SP26.Api.Controllers;
 
@@ -47,6 +49,7 @@ public class LocationsController(
     }
 
     [HttpPost]
+    [Authorize(Roles = "Admin")]
     public ActionResult<LocationDto> Create(LocationDto dto)
     {
         if (dto.TableCount < 1)
@@ -71,6 +74,7 @@ public class LocationsController(
     }
 
     [HttpPut("{id}")]
+    [Authorize]
     public ActionResult<LocationDto> Update(int id, LocationDto dto)
     {
         if (dto.TableCount < 1)
@@ -86,6 +90,11 @@ public class LocationsController(
             return NotFound();
         }
 
+        var userId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+
+        if (location.ManagerId != userId && !User.IsInRole("Admin"))
+            return Forbid();
+
         location.Name = dto.Name;
         location.Address = dto.Address;
         location.TableCount = dto.TableCount;
@@ -99,6 +108,7 @@ public class LocationsController(
     }
 
     [HttpDelete("{id}")]
+    [Authorize]
     public ActionResult Delete(int id)
     {
         var location = dataContext.Set<Location>()
@@ -108,6 +118,10 @@ public class LocationsController(
         {
             return NotFound();
         }
+        var userId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+
+        if (location.ManagerId != userId && !User.IsInRole("Admin"))
+            return Forbid();
 
         dataContext.Set<Location>().Remove(location);
         dataContext.SaveChanges();
