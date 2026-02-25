@@ -9,14 +9,12 @@ namespace Selu383.SP26.Api.Controllers;
 
 [Route("api/locations")]
 [ApiController]
-public class LocationsController(
-    DataContext dataContext
-    ) : ControllerBase
+public class LocationsController(DataContext dataContext) : ControllerBase
 {
     [HttpGet]
-    public IQueryable<LocationDto> GetAll()
+    public async Task<ActionResult<List<LocationDto>>> GetAll()
     {
-        return dataContext.Set<Location>()
+        var locations = await dataContext.Set<Location>()
             .Select(x => new LocationDto
             {
                 Id = x.Id,
@@ -24,19 +22,18 @@ public class LocationsController(
                 Address = x.Address,
                 TableCount = x.TableCount,
                 ManagerId = x.ManagerId,
-            });
+            })
+            .ToListAsync();
+
+        return Ok(locations);
     }
 
     [HttpGet("{id}")]
-    public ActionResult<LocationDto> GetById(int id)
+    public async Task<ActionResult<LocationDto>> GetById(int id)
     {
-        var result = dataContext.Set<Location>()
-            .FirstOrDefault(x => x.Id == id);
+        var result = await dataContext.Set<Location>().FirstOrDefaultAsync(x => x.Id == id);
 
-        if (result == null)
-        {
-            return NotFound();
-        }
+        if (result == null) return NotFound();
 
         return Ok(new LocationDto
         {
@@ -50,12 +47,9 @@ public class LocationsController(
 
     [HttpPost]
     [Authorize(Roles = "Admin")]
-    public ActionResult<LocationDto> Create(LocationDto dto)
+    public async Task<ActionResult<LocationDto>> Create(LocationDto dto)
     {
-        if (dto.TableCount < 1)
-        {
-            return BadRequest();
-        }
+        if (dto.TableCount < 1) return BadRequest("Table count must be at least 1.");
 
         var location = new Location
         {
@@ -66,7 +60,7 @@ public class LocationsController(
         };
 
         dataContext.Set<Location>().Add(location);
-        dataContext.SaveChanges();
+        await dataContext.SaveChangesAsync();
 
         dto.Id = location.Id;
 
@@ -75,33 +69,21 @@ public class LocationsController(
 
     [HttpPut("{id}")]
     [Authorize]
-    public ActionResult<LocationDto> Update(int id, LocationDto dto)
+    public async Task<ActionResult<LocationDto>> Update(int id, LocationDto dto)
     {
-        if (dto.TableCount < 1)
-        {
-            return BadRequest();
-        }
+        if (dto.TableCount < 1) return BadRequest("Table count must be at least 1.");
 
-        var location = dataContext.Set<Location>()
-            .FirstOrDefault(x => x.Id == id);
+        var location = await dataContext.Set<Location>().FirstOrDefaultAsync(x => x.Id == id);
 
-        if (location == null)
-        {
-            return NotFound();
-        }
-
-        var userId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
-
-        if (location.ManagerId != userId && !User.IsInRole("Admin"))
-            return Forbid();
+        if (location == null) return NotFound();
+        if (!IsAuthorizedToModify(location)) return Forbid();
 
         location.Name = dto.Name;
         location.Address = dto.Address;
         location.TableCount = dto.TableCount;
         location.ManagerId = dto.ManagerId;
 
-        dataContext.SaveChanges();
-
+        await dataContext.SaveChangesAsync();
         dto.Id = location.Id;
 
         return Ok(dto);
@@ -109,23 +91,27 @@ public class LocationsController(
 
     [HttpDelete("{id}")]
     [Authorize]
-    public ActionResult Delete(int id)
+    public async Task<ActionResult> Delete(int id)
     {
-        var location = dataContext.Set<Location>()
-            .FirstOrDefault(x => x.Id == id);
+        var location = await dataContext.Set<Location>().FirstOrDefaultAsync(x => x.Id == id);
 
-        if (location == null)
-        {
-            return NotFound();
-        }
-        var userId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
-
-        if (location.ManagerId != userId && !User.IsInRole("Admin"))
-            return Forbid();
+        if (location == null) return NotFound();
+        if (!IsAuthorizedToModify(location)) return Forbid();
 
         dataContext.Set<Location>().Remove(location);
-        dataContext.SaveChanges();
+        await dataContext.SaveChangesAsync();
 
         return Ok();
+    }
+
+    // Helper method to keep authorization logic in one place
+    private bool IsAuthorizedToModify(Location location)
+    {
+        var userIdString = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (int.TryParse(userIdString, out int userId))
+        {
+            return location.ManagerId == userId || User.IsInRole("Admin");
+        }
+        return false;
     }
 }
